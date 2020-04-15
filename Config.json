@@ -1,0 +1,10 @@
+{
+    "ProjectFolder":"D:\\Robin_Samples\\Team\\RPAChallenge",
+    "RPAChallengeWebsite":"www.rpachallenge.com",
+    "FieldNames":["First Name","Last Name","Company Name","Role in Company","Address","Email","Phone Number"],
+    "SenderEmailAddress":"s.ranjithmca@gmail.com",
+    "SenderEmailPassword":"Uma#1990",
+    "ReceiverEmailAddress":"s.ranjithmca@gmail.com",
+    "GmailSMTPServer":"smtp.gmail.com",
+    "GmailSMTPPort":465
+}
