@@ -1,0 +1,655 @@
+import "RPA_Challenge.appmask"
+set vConfigFile to "D:\Robin_Samples\Team\RPAChallenge\Config.json"
+set vErrorMsg to ""
+set g:vCurrent_Datetime to ""
+set g:vCurrent_Datetext to ""
+set g:vCurrent_DateTimeText to ""                                               
+set vAttributeName to "innerHTML"
+set vIDs to []
+set i to 0
+
+if (File.Exists File: vConfigFile) then
+    file.ReadText File: vConfigFile Encoding:File.TextFileEncoding.UTF8 Content=> Content
+    Variables.ConvertJsonToCustomObject Json: Content CustomObject=> JsonAsCustomObject
+    set vProjectFolder to JsonAsCustomObject.ProjectFolder
+    set vRPAChallengeWebsite to JsonAsCustomObject.RPAChallengeWebsite
+    set lstLabels to JsonAsCustomObject.FieldNames
+    set vSenderEmailAddress to JsonAsCustomObject.SenderEmailAddress
+    set vSenderEmailPassword to JsonAsCustomObject.SenderEmailPassword
+    set vReceiverEmailAddress to JsonAsCustomObject.ReceiverEmailAddress
+    set vGmailSMTPServer to JsonAsCustomObject.GmailSMTPServer
+    set vGmailSMTPPort to JsonAsCustomObject.GmailSMTPPort
+else 
+    goto skip
+end    
+
+if (Folder.Exists Path: vProjectFolder) then    
+    set vLogFilePath to vProjectFolder + "\\Logs"
+    set vErrSS to vLogFilePath + "\\Screenshots"
+    set vInputFolderPath to vProjectFolder + "\\Input"
+    set vOutputFolderPath to vProjectFolder + "\\Output"
+    if not (Folder.Exists Path: vLogFilePath) then
+        Folder.Create FolderPath: vProjectFolder \
+                      FolderName: "Logs" \
+                      Folder=> vLogFilePath
+        on error FolderNotFoundError
+            set vErrorMsg to "Log folder was not found"
+        on error CreateFolderError
+            set vErrorMsg to "Problem creating log folder"
+        on error EmptyNewFolderPathAndNameError
+            set vErrorMsg to "Both the log folder path and folder name do not have value"
+        on error
+            set vErrorMsg to "Unknown error occured while creating log folder"
+        end    
+        Folder.Create FolderPath: vLogFilePath \
+                      FolderName: "ErrScreenshots" \
+                      Folder=> vErrSS
+        on error FolderNotFoundError
+            set vErrorMsg to "Screenshots folder was not found"
+        on error CreateFolderError
+            set vErrorMsg to "Problem creating screenshots folder"
+        on error EmptyNewFolderPathAndNameError
+            set vErrorMsg to "Both the screenshots folder path and folder name do not have value"
+        on error
+            set vErrorMsg to "Unknown error occured while creating screenshots folder"
+        end                  
+    end
+    if not (Folder.Exists Path: vErrSS) then
+        Folder.Create FolderPath: vLogFilePath \
+                      FolderName: "ErrScreenshots" \
+                      Folder=> vErrSS
+        on error FolderNotFoundError
+            set vErrorMsg to "Screenshots folder was not found"
+        on error CreateFolderError
+            set vErrorMsg to "Problem creating screenshots folder"
+        on error EmptyNewFolderPathAndNameError
+            set vErrorMsg to "Both the screenshots folder path and folder name do not have value"
+        on error
+            set vErrorMsg to "Unknown error occured while creating screenshots folder"
+        end                                
+    end
+    if not (Folder.Exists Path: vInputFolderPath) then
+        Folder.Create FolderPath: vProjectFolder \
+                      FolderName: "Input" \
+                      Folder=> vInputFolderPath
+        on error FolderNotFoundError
+            set vErrorMsg to "Input folder was not found"
+        on error CreateFolderError
+            set vErrorMsg to "Problem creating input folder"
+        on error EmptyNewFolderPathAndNameError
+            set vErrorMsg to "Both the input folder path and folder name do not have value"
+        on error
+            set vErrorMsg to "Unknown error occured while creating input folder"
+        end                                
+    end
+    if not (Folder.Exists Path: vOutputFolderPath) then
+        Folder.Create FolderPath: vProjectFolder \
+        FolderName: "Output" \
+        Folder=> vOutputFolderPath
+    on error FolderNotFoundError
+            set vErrorMsg to "Output folder was not found"
+        on error CreateFolderError
+            set vErrorMsg to "Problem creating output folder"
+        on error EmptyNewFolderPathAndNameError
+            set vErrorMsg to "both the output folder path and folder name do not have value"
+        on error
+            set vErrorMsg to "Unknown error occured while creating output folder"
+        end                      
+    end
+    set vDownloadFilePath to vInputFolderPath +"\\challenge.xlsx"
+else 
+    goto skip
+end
+
+call Get_Date
+if (file.Exists File: vProjectFolder +"\\Challenge_Completed_"+ g:vCurrent_Datetext + ".jpg") then
+    file.Delete Files: vProjectFolder +"\\Challenge_Completed_"+ g:vCurrent_Datetext + ".jpg"
+    on error InvalidFilePathError
+        set vErrorMsg to "Specified Challenge completion screenshot file path not exist"
+        goto EndOfScript
+    on error FileNotFoundError
+        set vErrorMsg to "Specified Challenge completion screenshot file not found"
+        goto EndOfScript
+    on error DeleteFileError
+        set vErrorMsg to "Problem Challenge completion screenshot the file"
+        goto EndOfScript
+    on error 
+        set vErrorMsg to "Unknown error occured while deleting Challenge completion screenshot file"
+        goto EndOfScript
+    end
+end
+
+if (Folder.Exists Path: vInputFolderPath) then
+    Folder.Empty Folder: vInputFolderPath
+end
+
+if (Folder.Exists Path: vOutputFolderPath) then
+    Folder.Empty Folder: vOutputFolderPath
+end
+
+call Get_Date
+if not (file.Exists File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt") then
+    File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+                   TextToWrite: "Datetime,Log Description"\
+                   AppendNewLine:True \
+                   IfFileExists:File.IfFileExists.Append \
+                   Encoding:File.FileEncoding.Unicode              
+    on error WriteTextToFileError
+        goto skip
+    on error InvalidDirectoryError
+        goto skip
+    on error
+        goto skip
+    end    
+end
+
+WebAutomation.LaunchChrome Url: vRPAChallengeWebsite \
+                           WindowState:BrowserWindowState.Maximized \
+                           ClearCache:False \
+                           ClearCookies:False \
+                           BrowserInstance=> Browser
+on error LaunchChromeError
+    set vErrorMsg to "Problem launching chrome browser"
+    goto EndOfScript
+on error InvalidUrlError
+    set vErrorMsg to "Specified URL is invalid"
+    goto EndOfScript
+on error 
+    set vErrorMsg to "Unknown error occured while launching chrome browser"
+    goto EndOfScript
+end
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Launching chrome browser and opening RPA Challenge webpage"\
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end
+
+WebAutomation.DataExtraction.GetDetailsOfElement BrowserInstance: Browser \
+                                                 Control: RPA_Challenge.WebPage.Download \
+                                                 AttributeName:'href' \
+                                                 AttributeValue=> vDownloadURL
+web.DownloadToFile Url: vDownloadURL \
+                   FilePath: vDownloadFilePath \
+                   ConnectionTimeout:30 \
+                   FollowRedirection:True \
+                   ClearCookies:False \
+                   UserAgent:'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.21) Gecko/20100312 Firefox/3.6 Chrome/81.0.4044.92' \
+                   Encoding:'' \
+                   DownloadedFile=> vDownloadFilePath
+
+on error DirectoryDoesNotExistError
+    set vErrorMsg to "Required directory does not exist to download file"
+    goto EndOfScript
+on error DownloadFromWebError
+    set vErrorMsg to "Problem downloading file from website " + vRPAChallengeWebsite
+    goto EndOfScript
+on error
+    set vErrorMsg to "Unknown error occured while downloading file from website " + vRPAChallengeWebsite
+    goto EndOfScript
+end    
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Downloading excel file from RPA Challenge webpage"\
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+
+wait (file.Exists File: vDownloadFilePath)
+
+Folder.GetFiles Folder: vInputFolderPath \
+                FileFilter:'*.xlsx' \
+                IncludeSubfolders:False \
+                FailOnAccessDenied:True \
+                SortBy1:Folder.SortBy.NoSort \
+                SortDescending1:False \
+                SortBy2:Folder.SortBy.NoSort \
+                SortDescending2:False \
+                SortBy3:Folder.SortBy.NoSort \
+                SortDescending3:False Files=> Files
+                
+If (Files.count >0) then
+    Excel.LaunchAndOpen Path: Files[0] \
+                        Visible:True \
+                        Password:'' \
+                        ReadOnly:False \
+                        LoadAddInsAndMacros:False \
+                        Instance=> ExcelInstance
+    on error LaunchExcelError
+        set vErrorMsg to "Problem launching an excel instance"
+        goto EndOfScript
+    on error OpenDocumentError	    
+        set vErrorMsg to "Problem opening specified file " + vDownloadFilePath
+        goto EndOfScript
+    on error    
+        set vErrorMsg to "unknown error occured while launching excel and opening specified file" + vDownloadFilePath
+        goto EndOfScript
+    end
+
+    call Get_Date
+    File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+                   TextToWrite: g:vCurrent_Datetime +",Launching excel application and opening downloaded excel file " + vDownloadFilePath\
+                   AppendNewLine:True \
+                   IfFileExists:File.IfFileExists.Append \
+                   Encoding:File.FileEncoding.Unicode              
+    on error WriteTextToFileError
+        goto skip
+    on error InvalidDirectoryError
+        goto skip
+    on error
+        goto skip
+    end    
+else 
+    set vErrorMsg to "Downloaded file not found or file may not downloaded"
+    goto EndOfScript
+end    
+
+Excel.GetFirstFreeColumnRow Instance: ExcelInstance \
+                            FirstFreeColumn=> FirstFreeColumn \
+                            FirstFreeRow=> FirstFreeRow
+                            
+on error RetrieveFirstFreeColumnRowError
+    set vErrorMsg to "Problem retrieving the first free column/row of an Excel instance"
+    goto EndOfScript
+on error
+    set vErrorMsg to "Unknown error occured while retrieving the first free column/row of an Excel instance"
+    goto EndOfScript
+end                            
+
+excel.ReadCells Instance: ExcelInstance \
+                StartColumn: 1 \
+                StartRow: 1 \
+                EndColumn: FirstFreeColumn \
+                EndRow: FirstFreeRow \
+                ReadAsText:False \
+                FirstLineIsHeader:True \
+                Value=> Value
+
+on error ReadCellsError
+    set vErrorMsg to "problem reading the value(s) of the specified Excel cell(s)"
+    goto EndOfScript
+on error
+    set vErrorMsg to "Unknown error occured while reading the value(s) of the specified Excel cell(s)"
+    goto EndOfScript
+end    
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Reading data from downloaded excel file " + vDownloadFilePath\
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+
+Excel.Close Instance: ExcelInstance
+on error SaveExcelError
+    set vErrorMsg to "Problem saving excel file " + vDownloadFilePath
+    goto EndOfScript
+on error CloseExcelError
+    set vErrorMsg to "Problem closing excel file " + vDownloadFilePath
+    goto EndOfScript
+on error
+    set vErrorMsg to "Unknown error occured while closing excel file " + vDownloadFilePath
+    goto EndOfScript
+end
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",closing excel file " + vDownloadFilePath\
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+
+WebAutomation.FormFilling.PressButton BrowserInstance: Browser \
+                                      Control: RPA_Challenge.WebPage.Start
+on error ElementNotFoundError
+    set vErrorMsg to "Start button -  Web page element with the specified CSS selector was not found"
+    goto EndOfScript
+on error PressButtonError
+    set vErrorMsg to "Start button -  Problem clicking the specified web page button"
+    goto EndOfScript
+on error
+    set vErrorMsg to "Start button -  Unknown error occured while clicking the specified web page button"
+    goto EndOfScript
+end                                      
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Challenge started" \
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+                                      
+loop foreach row in value
+text.GetText Text: row[0] Subtext=> Subtext
+    if Subtext !="" then
+        call Get_Date
+        File.WriteText File: "\\Log_" + g:vCurrent_Datetext + ".txt" \
+                       TextToWrite: g:vCurrent_Datetime +",Processing record " + row[lstLabels[0]] \
+                       AppendNewLine:True \
+                       IfFileExists:File.IfFileExists.Append \
+                       Encoding:File.FileEncoding.Unicode              
+        on error WriteTextToFileError
+            goto skip
+        on error InvalidDirectoryError
+            goto skip
+        on error
+            goto skip
+        end    
+        
+        if lstLabels !=[] then
+            WebAutomation.DataExtraction.GetDetailsOfElement BrowserInstance: Browser \
+                                                                 Control: RPA_Challenge.WebPage.Div \
+                                                                 AttributeName: vAttributeName \
+                                                                 AttributeValue=> AttributeValue
+            on error RetrieveAttributeError
+                set vErrorMsg to "Problem retrieving attribute of input field div tag"
+                goto EndOfScript
+            on error
+                set vErrorMsg to "Unknown error occured while retrieving attribute of input fields div tag"
+                goto EndOfScript
+            end    
+            loop foreach item in lstLabels
+                text.ParseForFirstOccurrence Text: AttributeValue \
+                                             TextToFind: item \
+                                             StartingPosition: 0 \
+                                             IgnoreCase:False \
+                                             OccurrencePosition=> OccurrencePosition
+                on error 
+                    set vErrorMsg to "Unknown error occured while searching field " + item
+                    goto EndOfScript                             
+                end
+                
+                text.ParseForFirstOccurrence Text: AttributeValue \
+                                             TextToFind: " id" \
+                                             StartingPosition: OccurrencePosition \
+                                             IgnoreCase:False \
+                                             OccurrencePosition=> OccurrencePosition         
+                on error 
+                    set vErrorMsg to "Unknown error occured while searching field name " + item
+                    goto EndOfScript                             
+                end
+                
+                text.GetSubtext Text: AttributeValue \
+                                CharacterPosition: OccurrencePosition + 5 \
+                                NumberOfChars: 5 \
+                                Subtext=> Subtext    
+                on error StartIndexOrLengthOutOfRangeError
+                    set vErrorMsg to "Start index or length are out of range while searching field name " + item
+                    goto EndOfScript                             
+                on error
+                    set vErrorMsg to "Unknown error occured while searching field name " + item
+                    goto EndOfScript                             
+                end
+                
+                set vIDs to vIDs + Subtext
+             end                            
+        end
+        
+        set i to 0
+        loop foreach item in vIDs
+             WebAutomation.FormFilling.PopulateTextField BrowserInstance: Browser \
+                                                        Control: RPA_Challenge.WebPage.Input.Field(ID:'"'+item+'"') \
+                                                        Text: row[lstLabels[i]] \
+                                                        EmulateTyping:False \
+                                                        UnfocusAfterPopulate:True
+            on error ElementNotFoundError
+                set vErrorMsg to lstLabels[i] + " text field not found"
+                goto EndOfScript
+            on error PopulateTextFieldError    
+                set vErrorMsg to "Problem writing to the "+lstLabels[i]+" text field"
+                goto EndOfScript
+            on error
+                set vErrorMsg to "Unknown error occured while writing to the "+lstLabels[i]+" text field"
+                goto EndOfScript
+            end
+            set i to i + 1    
+        end
+        set vIDs to []
+        WebAutomation.FormFilling.PressButton BrowserInstance: Browser \
+                                              Control: RPA_Challenge.WebPage.Submit
+        on error ElementNotFoundError
+            set vErrorMsg to "Submit button with specified selector not found"
+            goto EndOfScript
+        on error PressButtonError
+            set vErrorMsg to "Problem clicking submit button"
+            goto EndOfScript
+        on error
+            set vErrorMsg to "Unknown error occured while clicking submit button"
+            goto EndOfScript
+        end    
+    else 
+        exit loop
+    end
+end
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Challenge Completed" \
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+
+wait 2
+
+call Get_Date
+WebAutomation.DataExtraction.TakeScreenshotSaveToFile BrowserInstance: Browser \
+                                                      File: vOutputFolderPath +"\\Challenge_Completed_"+ g:vCurrent_Datetext + ".jpg" \
+                                                      FileFormat:WebAutomation.FileFormat.Jpg
+on error SaveFileError
+    set vErrorMsg to "Problem saving RPA challenge result page screenshot"
+on error SaveToClipboardError
+    set vErrorMsg to "Problem while saving RPA challenge result page screenshot to the clipboard"
+on error TakeScreenshotError
+    set vErrorMsg to "Problem taking screenshot - RPA challenge result page"
+on error 
+    set vErrorMsg to "Unknown error occured while taking screenshot - RPA challenge result page"
+end
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Taking screenshot - RPA challenge result page, file: " + vProjectFolder +"_"+ g:vCurrent_Datetext + ".jpg" \
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end    
+
+WebAutomation.CloseWebBrowser BrowserInstance: Browser
+on error CloseWebBrowserError
+    set vErrorMsg to "Problem while closing the web browser"
+    goto EndOfScript
+on error
+    set vErrorMsg to "Unknown error occured while closing the web browser"
+    goto EndOfScript
+end    
+
+call Get_Date
+File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+               TextToWrite: g:vCurrent_Datetime +",Closing chrome browser"\
+               AppendNewLine:True \
+               IfFileExists:File.IfFileExists.Append \
+               Encoding:File.FileEncoding.Unicode              
+on error WriteTextToFileError
+    goto skip
+on error InvalidDirectoryError
+    goto skip
+on error
+    goto skip
+end
+
+call Get_Date
+Email.AuthenticateAndSend SMTPServer: vGmailSMTPServer \
+                          Port:vGmailSMTPPort \
+                          EnableSSL:True \
+                          Username: vSenderEmailAddress \
+                          Password: vSenderEmailPassword \
+                          SendFrom: vSenderEmailAddress \
+                          SenderDisplayName: "RPA Challenge Bot" \
+                          SendTo: vReceiverEmailAddress \
+                          CC:'' \
+                          BCC:'' \
+                          Subject: "RPA Challenge process completed successfully" \
+                          Body:"<b>Hello, " +vReceiverEmailAddress + "</b><br/> RPA Challenge process completed successfully.<br/> Check Challenge completion time in the attachment image" \
+                          IsBodyHtml:True \
+                          Attachments: [vOutputFolderPath +"\\Challenge_Completed_"+ g:vCurrent_Datetext + ".jpg"]
+on error InvalidEmailAddressError
+    set vErrorMsg to "Provided email address is invalid"
+on error SendEmailError   
+    set vErrorMsg to "Problem sending email"
+on error AttachmentNotFoundError
+    set vErrorMsg to "Specified attachments were not found"
+on error
+    set vErrorMsg to "Unknown error occured while sending email"
+end
+
+function Get_Date 
+DateTime.Local DateTimeFormat:DateTime.DateTimeFormat.DateAndTime \
+               CurrentDateTime=> g:vCurrent_Datetime1
+text.FromCustomDateTime DateTime: g:vCurrent_Datetime1 CustomFormat: "d/M/y HH:mm:ss tt" Result=> g:vCurrent_Datetime                  
+text.FromCustomDateTime DateTime: g:vCurrent_Datetime1 \
+                        CustomFormat: "dMyyyy" \
+                        Result=> g:vCurrent_DateText   
+text.FromCustomDateTime DateTime: g:vCurrent_Datetime1 \
+                        CustomFormat: "dMyyyy_HHmmss" \
+                        Result=> g:vCurrent_DateTimeText                                                
+end
+
+Label EndOfScript
+if vErrorMsg!="" then
+    call Get_Date
+    System.TakeScreenshotAndSaveToFile File: vErrSS + "\\ErrScreenshot_" + g:vCurrent_DateTimetext + ".jpg" ImageFormat:System.ImageFormat.Jpg
+    on error SaveScreenshotToFileError
+        set vErrorMsg to "Problem saving error screenshot to file"
+    on error SaveScreenshotToClipboardError
+        set vErrorMsg to "Problem while saving error screenshot to the clipboard"
+    on error TakeScreenshotError
+        set vErrorMsg to "Problem taking error screenshot"
+    on error GetScreenError
+        set vErrorMsg to "Problem getting specified screen to take screenshot"
+    on error 
+        set vErrorMsg to "Unknown error occured while taking error screenshot"
+    end
+    Email.AuthenticateAndSend SMTPServer: vGmailSMTPServer \
+                              Port:vGmailSMTPPort \
+                              EnableSSL:True \
+                              Username: vSenderEmailAddress \
+                              Password: vSenderEmailPassword \
+                              SendFrom: vSenderEmailAddress \
+                              SenderDisplayName: "RPA Challenge Bot" \
+                              SendTo: vReceiverEmailAddress \
+                              CC:'' \
+                              BCC:'' \
+                              Subject: "Error occured in RPA Challenge Process" \
+                              Body:"<b>Hello, " +vReceiverEmailAddress + "</b><br/> Error occured in RPA Challenge process.<br/> Find error screenshot image in attachment.<br/>" + " Error description:" +vErrorMsg \
+                              IsBodyHtml:True \
+                              Attachments: [vErrSS + "\\ErrScreenshot_" + g:vCurrent_DateTimetext + ".jpg"]
+    on error InvalidEmailAddressError
+        set vErrorMsg to "Provided email address is invalid"
+    on error SendEmailError   
+        set vErrorMsg to "Problem sending email"
+    on error AttachmentNotFoundError
+        set vErrorMsg to "Specified attachments were not found"
+    on error
+        set vErrorMsg to "Unknown error occured while sending email"
+    end
+        
+    File.WriteText File: vLogFilePath + "\\Log_" + g:vCurrent_Datetext + ".txt" \
+                   TextToWrite: g:vCurrent_Datetime +",Error: " + vErrorMsg \
+                   AppendNewLine:True \
+                   IfFileExists:File.IfFileExists.Append \
+                   Encoding:File.FileEncoding.Unicode              
+    on error WriteTextToFileError
+        goto skip
+    on error InvalidDirectoryError
+        goto skip
+    on error
+        goto skip
+    end    
+end                  
+
+label skip              
+call Get_Date
+System.TakeScreenshotAndSaveToFile File: vErrSS + "\\ErrScreenshot_" + g:vCurrent_DateTimetext + ".jpg" ImageFormat:System.ImageFormat.Jpg
+on error SaveScreenshotToFileError
+    set vErrorMsg to "Problem saving error screenshot to file"
+on error SaveScreenshotToClipboardError
+    set vErrorMsg to "Problem while saving error screenshot to the clipboard"
+on error TakeScreenshotError
+    set vErrorMsg to "Problem taking error screenshot"
+on error GetScreenError
+    set vErrorMsg to "Problem getting specified screen to take screenshot"
+on error 
+    set vErrorMsg to "Unknown error occured while taking error screenshot"
+end
+Email.AuthenticateAndSend SMTPServer: vGmailSMTPServer \
+                          Port:vGmailSMTPPort \
+                          EnableSSL:True \
+                          Username: vSenderEmailAddress \
+                          Password: vSenderEmailPassword \
+                          SendFrom: vSenderEmailAddress \
+                          SenderDisplayName: "RPA Challenge Bot" \
+                          SendTo: vReceiverEmailAddress \
+                          CC:'' \
+                          BCC:'' \
+                          Subject: "Error occured in RPA Challenge Process" \
+                          Body:"<b>Hello, " +vReceiverEmailAddress + "</b><br/> Error occured in RPA Challenge process.<br/> Find error screenshot image in attachment.<br/>" + " Error description: unable to log event or error details to log file"\
+                          IsBodyHtml:True \
+                          Attachments: [vErrSS + "\\ErrScreenshot_" + g:vCurrent_DateTimetext + ".jpg"]
+on error InvalidEmailAddressError
+    set vErrorMsg to "Provided email address is invalid"
+on error SendEmailError   
+    set vErrorMsg to "Problem sending email"
+on error AttachmentNotFoundError
+    set vErrorMsg to "Specified attachments were not found"
+on error
+    set vErrorMsg to "Unknown error occured while sending email"
+end
