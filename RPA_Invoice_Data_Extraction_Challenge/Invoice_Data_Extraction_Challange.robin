@@ -1,0 +1,138 @@
+import "C:\Users\Cooki\Documents\RPAChallenge_InvoiceEx.appmask"
+
+set folderPath to "D:\Downloads"
+set outFilePath to "D:\FileToUpload.csv"
+DateTime.Local DateTimeFormat:DateTime.DateTimeFormat.DateOnly CurrentDateTime=> CurrentDate
+
+set dVar to {["ID","DueDate","InvoiceNo","InvoiceDate","CompanyName","TotalDue"]}
+
+if (File.Exists File: outFilePath) then
+    Console.Write Message: "Deleting existing output file."
+    File.Delete Files: outFilePath
+end
+
+Folder.Delete Folder: folderPath
+Folder.Create FolderPath:"D:\\"  FolderName: "Downloads" Folder=> CreatedFolder
+
+#This file will be uploaded
+File.WriteCSV VariableToWrite:dVar  CSVFile:outFilePath \
+                                    CsvFileEncoding:File.CSVEncoding.UTF8 \
+                                    IncludeColumnNames:false IfFileExists:File.IfFileExists.Append \
+                                    ColumnsSeparator:File.CSVColumnsSeparator.SystemDefault
+
+WebAutomation.LaunchChromeNoWait Url: "https://rpachallengeocr.azurewebsites.net/" \
+                           WindowState:WebAutomation.BrowserWindowState.Maximized \
+                           ClearCache:False ClearCookies:False BrowserInstance=> Browser
+
+wait 5
+WebAutomation.Click BrowserInstance:Browser  Control: RPAChallenge_InvoiceEx.Browser.StartBtn
+loop i from 1 to 3 step 1
+    WebAutomation.DataExtraction.ExtractHtmlTable BrowserInstance: Browser  \
+                                                  Control: RPAChallenge_InvoiceEx.Browser.Table  \
+                                                  ExtractedData=> exTable
+ 
+    WebAutomation.ExecuteJavascript BrowserInstance: Browser \
+                                    Javascript:"function ExecuteScript() {Links=[];tdVal = document.querySelectorAll('td');for(var i=1;i<=tdVal.length;i++)if(i%4==0)Links.push(tdVal[i-1].getElementsByTagName('a')[0].href);return Links; }" \
+                                    Result=> Result
+
+    Text.SplitWithDelimiter Text: Result  CustomDelimiter:","  IsRegEx:False Result=> TextList
+
+    set fCounter to 0
+    loop foreach row in exTable
+    
+        DateTime.Subtract FromDate:CurrentDate  SubstractDate:row[2]  TimeUnit:DateTime.DifferenceTimeUnit.Days TimeDifference=> TimeDifference
+        if TimeDifference>=0 then
+            set fileName to folderPath+"\\"+ row[1]+"#"+row[2]+".jpg"
+    
+            #Display.ShowMessage Title:'' Message: fileName ButtonPressed=> ButtonPressed
+            Web.DownloadToFile Url:TextList[fCounter]   FilePath:fileName ConnectionTimeout:30 FollowRedirection:True \
+                               ClearCookies:False UserAgent:'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.8.1.21) Gecko/20100312 Firefox/3.6' \
+                               Encoding:'' DownloadedFile=> DownloadedFile
+        end
+        set fCounter to fCounter + 1
+    end
+    
+    if (i!=3) then
+    	WebAutomation.Click BrowserInstance: Browser Control: RPAChallenge_InvoiceEx.Browser.NextBtn
+    end
+end
+
+Folder.GetFiles Folder: folderPath  FileFilter:'*' IncludeSubfolders:False FailOnAccessDenied:True \ 
+                SortBy1:Folder.SortBy.CreationTime SortDescending1:False SortBy2:Folder.SortBy.NoSort \
+                SortDescending2:False SortBy3:Folder.SortBy.FullName SortDescending3:False Files=> Files
+
+loop foreach file in Files
+    File.GetPathPart File: file  RootPath=> RootPath Directory=> Directory FileName=> FileName FileNameWithoutExtension=> FileNameWithoutExtension Extension=> Extension
+    
+    Text.SplitWithDelimiter Text:FileName CustomDelimiter:"#"  IsRegEx:False Result=> codeDate
+    Text.Replace Text:codeDate[1]  TextToFind:".jpg"  ReplaceWith:""  IsRegEx:False IgnoreCase:False ActivateEscapeSequences:False Result=> dateVal
+    
+    File.GetTempPath TempFile=> TempFile
+	System.RunDOSCommand DOSCommandOrApplication: 'tesseract '+ file +" " + TempFile \
+                         StandardOutput=> StandardOutput \
+                         StandardError=> StandardError \
+                         ExitCode=> ExitCode
+
+    if (ExitCode = 0) then
+        File.ReadText File: TempFile+".txt" Encoding:File.TextFileEncoding.UTF8 Content=> OCRResult
+        File.Delete Files: TempFile+".txt"
+    else
+        Console.Write Message: "Error : " + StandardError 
+        Console.Write Message: "Process ended with an error." 
+    end
+    
+    if "Aenean" in OCRResult then
+    #Getting InvoiceDate
+        Text.RegexParse Text:OCRResult  TextToFind:'([12]\d{3}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))'  \
+                    StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> InvoiceDate
+        #Getting Total
+        Text.RegexParse Text:OCRResult  TextToFind:'(Total (\d){4}\.\d{2})'  StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> Total
+        #Getting InvoiceNumber
+        Text.RegexParse Text:OCRResult  TextToFind:'#\d{6}'  StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> InvoiceNumber
+        Text.Replace Text:InvoiceNumber  TextToFind:'\r\n|#'  ReplaceWith:''  IsRegEx:true IgnoreCase:False ActivateEscapeSequences:False Result=> InvoiceNumber
+        Text.Trim Text:Total TrimOption:Text.TrimOption.Both TrimmedText=> Total
+        Text.Replace Text:Total  TextToFind:'Total '  ReplaceWith:''  IsRegEx:false IgnoreCase:False ActivateEscapeSequences:False Result=> Total
+        Text.Trim Text:InvoiceDate TrimOption:Text.TrimOption.Both TrimmedText=> InvoiceDate
+        text.ToDateTimeCustomFormat Text:InvoiceDate  CustomFormat:"yyyy-MM-d"  DateTime=> TextAsDateTime
+        text.FromCustomDateTime DateTime:TextAsDateTime  CustomFormat:"dd-MM-yyyy"  Result=> InvoiceDate
+        #Console.Write Message:  InvoiceNumber+","+Total+","+InvoiceDate+","+codeDate[0]+","+codeDate[1]
+        set dVar to { [codeDate[0], dateVal,InvoiceNumber,InvoiceDate,"Aenean LLC",Total] }
+        #Writes to CSV
+        File.WriteCSV VariableToWrite:dVar  CSVFile:outFilePath  \
+                    CsvFileEncoding:File.CSVEncoding.UTF8 IncludeColumnNames:false \
+                  IfFileExists:File.IfFileExists.Append ColumnsSeparator:File.CSVColumnsSeparator.SystemDefault
+    else if "Amet" in OCRResult then
+        #Getting InvoiceDate
+        Text.RegexParse Text:OCRResult  TextToFind:'(([A-z]* (\d{2}|\d{1}), ([12]\d{3})))'  StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> InvoiceDate
+        #Getting Total
+        Text.RegexParse Text:OCRResult  TextToFind:'Total \$\d*,\d*\.\d{2}'  StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> Total
+        #Getting InvoiceNumber
+        Text.RegexParse Text:OCRResult  TextToFind:'(#\s?\d{5})'  StartingPosition:1  IgnoreCase:False OccurrencePositions=> OccurrencePositions Matches=> InvoiceNumber
+        Text.Replace Text:InvoiceNumber  TextToFind:'\r\n|#| '  ReplaceWith:''  IsRegEx:true IgnoreCase:False ActivateEscapeSequences:False Result=> InvoiceNumber
+        Text.Replace Text:Total  TextToFind:'\r\n|\$|\,'  ReplaceWith:''  IsRegEx:true IgnoreCase:False ActivateEscapeSequences:False Result=> Total
+        Text.Replace Text:Total  TextToFind:'Total '  ReplaceWith:''  IsRegEx:false IgnoreCase:False ActivateEscapeSequences:False Result=> Total
+        Text.Replace Text:InvoiceDate  TextToFind:'\r\n'  ReplaceWith:''  IsRegEx:true IgnoreCase:False ActivateEscapeSequences:False Result=> InvoiceDate
+        text.ToDateTimeCustomFormat Text:InvoiceDate  CustomFormat:"MMM d, yyyy"  DateTime=> TextAsDateTime
+        text.FromCustomDateTime DateTime:TextAsDateTime  CustomFormat:"dd-MM-yyyy"  Result=> InvoiceDate
+        #Console.Write Message:  InvoiceNumber+","+Total+","+InvoiceDate+","+codeDate[0]+","+codeDate[1]
+        set dVar to { [codeDate[0], dateVal,InvoiceNumber,InvoiceDate,"Sit Amet Corp.",Total] }
+        #Writes to CSV
+        File.WriteCSV VariableToWrite:dVar  CSVFile:outFilePath \
+                        CsvFileEncoding:File.CSVEncoding.UTF8 IncludeColumnNames:false \
+                        IfFileExists:File.IfFileExists.Append ColumnsSeparator:File.CSVColumnsSeparator.SystemDefault
+    end
+	
+end
+
+#MouseAndKeyboard.ClickAt ClickType:MouseAndKeyboard.MouseClickType.LeftClick MillisecondsDelay:0 X:910  Y:504 \
+#                         RelativeTo:MouseAndKeyboard.PositionRelativeTo.Screen MovementStyle:MouseAndKeyboard.MovementStyle.Instant
+
+WebAutomation.Click BrowserInstance:Browser  Control: RPAChallenge_InvoiceEx.Browser.Submit
+                         
+UIAutomation.FormFilling.PopulateTextField TextField:RPAChallenge_InvoiceEx.Submit.FileName Text: outFilePath
+
+UIAutomation.Click Element: RPAChallenge_InvoiceEx.Submit.Open ClickType:UIAutomation.ClickType.LeftClick \
+                   MousePositionRelativeToElement:UIAutomation.RectangleEdgePoint.MiddleCenter OffsetX:0 OffsetY:0
+
+wait 10
+WebAutomation.CloseWebBrowser BrowserInstance: Browser
